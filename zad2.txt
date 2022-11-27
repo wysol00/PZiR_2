@@ -1,0 +1,76 @@
+%%sh
+cat>pi-mpi.c<<EOF
+#include <stdio.h>
+#include <mpi.h>
+int main(int argc, char** argv) {
+int id; /* identyfikator (ranga) procesu */
+int p; /* liczba procesow */
+float a = 1.0; /* lewy koniec przedzialu */
+float b = 4.0; /* prawy koniec przedzialu */
+int n = 32; /* liczba przedzialow (trapezow) */
+float h; /* dlugosc przedzialu */
+float a_local; /* lokalny, lewy koniec przedzialu */
+float b_local; /* lokalny, prawy koniec przedzialu */
+int N_local; /* lokalna liczba przedzialow */
+float calka; /* lokalna wartosc calki */
+float suma; /* pelna wartosc calki */
+int zrodlo; /* identyfikator procesu zrodlowego */
+int docel = 0; /* identyfikator procesu docelowego, tj. procesu 0 */
+int typ = 0; /* typ (znacznik) wiadomosci */
+MPI_Status status; /* status powrotu dla funkcji receive */
+float obl_calke(float a_local, float b_local, /* funkcja lokalnego */
+int N_local, float h); /* obliczania calki */
+MPI_Init(&argc, &argv); /* inicjacja MPI */
+MPI_Comm_rank(MPI_COMM_WORLD, &id); /* zwraca identyfikator procesu */
+MPI_Comm_size(MPI_COMM_WORLD, &p); /* zwraca liczbe procesow */
+h = (b - a) / (float)n; /* h jest to samo dla wszystkich procesow */
+N_local = n / p; /* ta sama liczba przedzialow w kazdym procesie */
+a_local = a + (float)id *(float)N_local * h; /* wyznaczenie lewego i prawego */
+b_local = a_local + (float)N_local * h; /* konca przedzialu */
+calka = obl_calke(a_local, b_local, N_local, h);
+if (id == 0) { /* dla procesu 0 */
+suma = calka;
+for (zrodlo = 1; zrodlo < p; zrodlo++) {
+MPI_Recv(&calka, 1, MPI_FLOAT, zrodlo, typ,
+MPI_COMM_WORLD, &status);
+suma = suma + calka;
+}
+}
+else { /* dla procesow o numerach != 0 */
+/* wyslanie lokalnej wartosci calki */
+MPI_Send(&calka, 1, MPI_FLOAT, docel, typ, MPI_COMM_WORLD);
+}
+/* drukowanie wyniku */
+if (id == 0) {
+printf("Liczba procesow: %d\n", p);
+printf("Przy n = %d trapezach, przyblizenie calki\n", n);
+printf("w granicach od %f do %f wynosi %f\n", a, b, suma);
+}
+/* zamkniecie MPI */
+MPI_Finalize();
+return 0;
+}
+float obl_calke(float a_local, float b_local,
+int N_local, float h) {
+float calka; /* lokalna wartosc calki */
+float x;
+int i;
+float f(float x); /* funkcja ktora calkujemy */
+calka = (f(a_local) + f(b_local)) / 2.0;
+x = a_local;
+for (i = 1; i <= N_local - 1; i++) {
+x = x + h;
+calka = calka + f(x);
+}
+calka = calka * h;
+return calka;
+} /* obl_calke */
+float f(float x) {
+float wart;
+/* obliczenie f(x) */
+wart = x;
+return wart;
+} /* f */
+
+EOF
+mpicc pi-mpi.c && mpirun -n 8 --allow-run-as-root a.out;
